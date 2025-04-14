@@ -7,108 +7,213 @@
 \usepackage{geometry}
 \usepackage{float}
 \usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
 
 \geometry{margin=2.5cm}
 
-\title{Inventario Periódico. Simulación de eventos discretos}
+\title{Inventario Periódico. Simulación de Eventos Discretos}
 \author{Javier Alejandro González Díaz}
+\date{\today}
 
 \begin{document}
-
 \maketitle
+\vspace{13cm}
 
 \begin{center}
-    \textbf{Universidad de La Habana} \\
-    \textit{Facultad de Matemática y Computación} \\
-    \textit{Curso de Simulación. Tercer año} \\
-    \textit{\today}
-
+    \textbf{Universidad de La Habana}\\
+    \textit{Facultad de Matemática y Computación}\\
+    \textit{Curso de Simulación. Tercer año}
 \end{center}
 
-\vspace{1cm}
-
-\begin{figure}[htb]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.15\textwidth]{img/matcom.jpg}
-    \label{fig:matcom}
 \end{figure}
-
-\begin{abstract}
-Resumen breve del proyecto de simulación, sus objetivos, metodología y principales resultados.
-\end{abstract}
 
 \newpage
 
 \section{Introducción}
-\subsection{Breve descripción del proyecto}
-Descripción general del proyecto de simulación, contexto y relevancia.
+Imagina que tienes una pequeña tienda de tu producto estrella —pongamos camisetas de edición limitada— y cada día llegan clientes de forma impredecible: algunos compran una sola prenda, otros varias de golpe. Si no tienes suficiente stock, pierdes ventas y, con ellas, clientes habituales. Pero si pides demasiado y lo guardas en el almacén, incurres en gastos de espacio y capital inmovilizado.
+
+Para gestionar esta incertidumbre, adoptas una política sencilla: fijas un umbral mínimo $s$ y, cuando tu inventario baja de ese punto, haces un pedido para reponer hasta un nivel $S$. Cada pedido tiene un coste que depende de cuántas unidades pidas, y tarda un tiempo $L$ en llegar. Además, mantener cada camiseta en estantería te cuesta $h$ unidades monetarias por día, y las vendes a un precio $r$.
+
+Con simulación de eventos discretos podemos recrear este escenario una y otra vez, permitiéndonos evaluar distintas políticas de inventario bajo incertidumbre y encontrar estrategias que equilibren la rentabilidad con el nivel de servicio al cliente.
+
+En la gestión moderna de inventarios, mantener el equilibrio entre nivel de servicio y costos es esencial. Un exceso de stock genera altos costos de almacenamiento y capital inmovilizado, mientras que un inventario insuficiente conlleva pérdidas de ventas y de fidelidad de clientes. Este proyecto aborda el clásico \emph{modelo de inventario $(s,S)$} descrito por Ross \cite{ross2013simulation}, implementado mediante simulación de eventos discretos, para estimar la ganancia promedio y otras métricas relevantes bajo incertidumbre estocástica.
 
 \subsection{Objetivos y metas}
-Objetivos específicos que se pretenden alcanzar con esta simulación.
+\begin{itemize}
+  \item Implementar un simulador de eventos discretos del modelo $(s,S)$ para un único producto.
+  \item Estimar la ganancia promedio por unidad de tiempo en un horizonte $T$.
+  \item Identificar la política óptima $(s^*,S^*)$ que maximiza la ganancia esperada.
+  \item Analizar la sensibilidad de las métricas ante variaciones en la tasa de demanda $\lambda$ y el tiempo de entrega $L$.
+  \item Evaluar el impacto de distintas distribuciones de demanda y estructuras de costo de pedido.
+  \item Cuantificar la incertidumbre de los resultados mediante bootstrap.
+\end{itemize}
 
 \subsection{Sistema específico a simular}
-Descripción detallada del sistema a simular y su funcionamiento.
+Simulamos una tienda que vende un producto a precio unitario $r$. Las llegadas de clientes siguen un proceso de Poisson con tasa $\lambda$, y cada cliente demanda una cantidad aleatoria $D\sim G$. Se adopta una política $(s,S)$: cuando el inventario cae por debajo de $s$ y no hay pedidos pendientes, se ordenan $S-x$ unidades, con costo $c(y)$ y lead time $L$. El costo de mantenimiento es $h$ por unidad y por unidad de tiempo. Si $D>x$, se vende $x$ y se pierde $D-x$ sin backorders.
 
 \subsection{Variables de interés}
-Identificación y descripción de las variables principales a estudiar en la simulación.
+\begin{description}
+  \item[$x(t)$] Nivel de inventario en el tiempo.
+  \item[$y(t)$] Cantidad pendiente de entrega.
+  \item[$R$] Ingresos acumulados.
+  \item[$C$] Costos de pedidos acumulados.
+  \item[$H$] Costos de mantenimiento acumulados.
+  \item[$\pi = (R - C - H)/T$] Ganancia promedio por unidad de tiempo.
+  \item \emph{Fill rate}, unidades perdidas, nivel medio de inventario, número de pedidos.
+\end{description}
 
 \section{Detalles de Implementación}
-\subsection{Pasos seguidos para la implementación}
-Descripción metodológica del proceso de implementación:
+\subsection{Diseño conceptual}
+Se implementa en Python una clase \texttt{ContinuousReviewInventory} que maneja un heap de eventos (\texttt{heapq}) con tipos \texttt{ARRIVAL} y \texttt{DELIVERY}. El simulador actualiza el costo de mantenimiento entre eventos y procesa llegadas y entregas según la política $(s,S)$.
+
+\subsection{Herramientas y entorno}
 \begin{itemize}
-    \item Diseño conceptual del modelo
-    \item Selección de herramientas y lenguajes de programación
-    \item Desarrollo del algoritmo
-    \item Verificación y validación
-    \item Calibración del modelo
+  \item Lenguaje: Python 3.9
+  \item Librerías: \texttt{numpy}, \texttt{heapq}, \texttt{matplotlib}, \texttt{pandas}, \texttt{seaborn}
+  \item Estructura de proyecto modular:  
+    \texttt{src/InventoryCore}, \texttt{src/Analyzer}, \texttt{notebooks/}
 \end{itemize}
+
+\subsection{Algoritmo principal}
+\begin{enumerate}
+  \item Inicializar inventario en $S$, programar primera llegada.
+  \item Mientras $t<T$:
+    \begin{itemize}
+      \item Extraer próximo evento de la cola.
+      \item Actualizar costo de mantenimiento $\Delta t \cdot h \cdot x$.
+      \item Procesar \texttt{ARRIVAL} (generar demanda, ajustar $x$, posibles pérdidas, quizá ordenar) o \texttt{DELIVERY} (sumar inventario, pagar pedido).
+    \end{itemize}
+  \item Ajustar costo de mantenimiento hasta $T$.
+\end{enumerate}
 
 \section{Resultados y Experimentos}
-\subsection{Hallazgos de la simulación}
-Presentación de los resultados principales obtenidos durante la simulación.
+En las siguientes subsecciones presentamos cada análisis junto con su motivación, código empleado y resultados gráficos.
 
-\subsection{Interpretación de los resultados}
-Análisis e interpretación de los datos obtenidos.
+\subsection{Optimización de la política (s,S)}
+\paragraph{Motivación.} Determinar $(s^*,S^*)$ que maximiza $\pi$ para minimizar costos y pérdidas.
+\paragraph{Código y gráfico.}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{img/heatmap.png}
+  \caption{Heatmap de la ganancia promedio según $(s,S)$.}
+\end{figure}
+\paragraph{Resultado.} La política óptima resultó $(s^*,S^*)=(20,60)$ con $\pi^*\approx 45.2$.
 
-\subsection{Hipótesis extraídas de los resultados}
-Presentación de las hipótesis formuladas a partir de los resultados de la simulación.
+\subsection{Sensibilidad a la tasa de llegada $\lambda$}
+\paragraph{Motivación.} Evaluar robustez frente a variaciones en la demanda.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.45\textwidth]{img/lambda1.png}
+  \caption{Ganancia y nivel de servicio vs.\ $\lambda$.}
+\end{figure}
+\paragraph{Interpretación.} Para $\lambda>8$ la ganancia decae y el fill rate baja, indicando necesidad de ajustar $(s,S)$.
 
-\subsection{Experimentos realizados para validar las hipótesis}
-Descripción de los experimentos adicionales realizados para confirmar o refutar las hipótesis.
+\subsection{Sensibilidad al lead time L}
+\paragraph{Motivación.} Comprender impacto de retrasos logísticos.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.45\textwidth]{img/lambdaL2.png}
+  \caption{Ganancia y nivel de servicio vs.\ $L$.}
+\end{figure}
+\paragraph{Interpretación.} A mayor $L$, aumenta el inventario de seguridad necesario; de lo contrario, caen $\pi$ y el nivel de servicio.
 
-\subsection{Análisis estadístico de la simulación}
-Análisis estadístico de las variables de interés:
-\begin{itemize}
-    \item Medidas de tendencia central
-    \item Variabilidad
-    \item Intervalos de confianza
-    \item Pruebas de hipótesis
-\end{itemize}
+\subsection{Impacto de la distribución de demanda}
+\paragraph{Motivación.} Analizar cómo la forma de $G$ afecta desempeño.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\textwidth]{img/demand.png}
+  \caption{Ganancia vs.\ tipo de demanda.}
+\end{figure}
+\paragraph{Interpretación.} La distribución Normal fue la peor, seguida de Uniforme; Poisson dio mejor resultado, por su menor variabilidad relativa.
 
-\subsection{Análisis de parada de la simulación}
-Criterios utilizados para determinar la finalización de la simulación y justificación.
+\subsection{Estructuras de costo de pedido}
+\paragraph{Motivación.} Evaluar efectos de costos fijos, variables o mixtos.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\textwidth]{img/costs.png}
+  \caption{Nivel de servicio vs.\ modelo de costo.}
+\end{figure}
+\paragraph{Interpretación.} \emph{Volume Discount} y \emph{Fixed+Linear} lograron mejores niveles de servicio; el modelo puramente lineal quedó en último lugar.
+
+\subsection{Bootstrap de intervalos de confianza}
+\paragraph{Motivación.} Cuantificar la incertidumbre en la estimación de $\pi$.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\textwidth]{img/distboost.png}
+  \caption{Distribución bootstrap de la ganancia promedio.}
+\end{figure}
+\paragraph{Resultado.} IC 95\,\% para $\pi$: $[84.18,99.61]$, lo que indica alta confiabilidad de la estimación.
 
 \section{Modelo Matemático}
-\subsection{Descripción del modelo probabilístico}
-Formalización matemática del modelo utilizado, incluyendo ecuaciones y distribuciones de probabilidad.
-
+\subsection{Definición formal}
+\[
+N(t)\sim\mathrm{Poisson}(\lambda),\quad D_i\sim G,\quad
+(s,S)\!:\;x(t)<s\Rightarrow y=S-x(t),\;t_1=t+L.
+\]
+\subsection{Ecuaciones de actualización}
+Entre eventos $t\to t'$:
+\[
+H\gets H+h\,x\,(t'-t),\quad
+R\gets R+r\min\{D,x\},\quad
+x\gets x-\min\{D,x\}.
+\]
 \subsection{Supuestos y restricciones}
-Descripción de los supuestos realizados y las limitaciones del modelo.
+\begin{itemize}
+  \item Sin backorders: demanda no servida se pierde.
+  \item Lead time constante.
+  \item Política de revisión continua.
+\end{itemize}
+\section*{Próximos pasos}
 
-\subsection{Comparación con resultados experimentales}
-Análisis comparativo entre los resultados teóricos del modelo y los obtenidos experimentalmente.
+El desarrollo de este simulador no solo permite representar el comportamiento de un sistema de inventario bajo revisión continua, algo útil para la \emph{vida real}, sino que también habilita un \textbf{entorno flexible para el análisis y la toma de decisiones estratégicas}.
+
+A lo largo de este estudio se han implementado diversos analizadores especializados que permiten explorar diferentes aspectos del sistema. Se invita al lector a experimentar con ellos:
+
+\begin{itemize}
+    \item \textbf{InventoryAnalyzer} % 📊
+    
+    Ideal para explorar políticas de pedido. Permite encontrar tupla(s) $(s, S)$ óptimas mediante búsqueda en malla. Prueba distintos horizontes de tiempo y estructuras de demanda para encontrar políticas robustas.
+
+    \item \textbf{SensitivityAnalyzer} % ⚙️
+    
+    Úsalo para entender \textbf{qué tan sensible es tu sistema} ante parámetros como la tasa de demanda ($\lambda$) o el tiempo de entrega ($L$). Una herramienta clave para análisis de riesgos y robustez.
+
+    \item \textbf{DemandDistributionAnalyzer} % 📈
+    
+    Explora el \textbf{impacto de diferentes distribuciones de demanda} sobre el rendimiento del sistema. Ideal para evaluar políticas bajo distintos escenarios de incertidumbre.
+
+    \item \textbf{CostStructureAnalyzer} % 💰
+    
+    Permite comparar cómo distintas estructuras de costos afectan métricas clave como el nivel de servicio o la ganancia. Fundamental para adaptar el modelo a diferentes realidades empresariales.
+
+    \item \textbf{BootstrapAnalyzer} % 📦
+    
+    Evalúa la \textbf{variabilidad de las métricas simuladas}. Genera intervalos de confianza y ayuda a verificar la confiabilidad estadística de tus resultados.
+\end{itemize}
+
+\vspace{1em}
+
+Cada uno de estos analizadores es una herramienta poderosa por sí misma, pero su verdadero valor se maximiza al usarlos \textbf{en conjunto}. Experimenta, ajusta parámetros y descubre las combinaciones que maximizan tu rendimiento bajo incertidumbre.
+
+\begin{center}
+\textbf{\Large ¡Explora, analiza y optimiza tu sistema de inventario!} % 📋🚛🚀
+\end{center}
 
 \section{Conclusiones}
-Resumen de los hallazgos principales, interpretación global de los resultados y recomendaciones para trabajos futuros.
+\begin{itemize}
+  \item La política óptima $(20,60)$ maximiza la ganancia promedio bajo los parámetros base.
+  \item El sistema es sensible a $\lambda$ y $L$; conviene revisar $(s,S)$ en función de la demanda y retrasos.
+  \item La elección de la distribución de demanda y de la estructura de costos impacta significativamente en $\pi$ y nivel de servicio.
+  \item El bootstrap confirma la robustez de la estimación de $\pi$.
+\end{itemize}
+\noindent\textbf{Trabajo futuro:} Extender a múltiples productos, lead time estocástico o políticas híbridas $(s,S,n)$.
 
 \begin{thebibliography}{99}
-\bibitem{ref1} Autor, A. (Año). \textit{Título del artículo}. Nombre de la revista, volumen(número), páginas.
-\bibitem{ref2} Autor, B. (Año). \textit{Título del libro}. Editorial.
+\bibitem{ross2013simulation} Ross, S. M. (2013). \textit{Simulation}, 5th ed. Academic Press. Capítulo 7.5.
 \end{thebibliography}
-
-\appendix
-\section{Código fuente}
-\section{Datos adicionales}
-\section{Gráficos complementarios}
 
 \end{document}
